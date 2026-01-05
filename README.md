@@ -23,8 +23,7 @@ git add .
 git commit -m "Initial setup"
 git branch -M main
 
-# Link Repo (Replace TOKEN with your actual token)
-git remote add origin https://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@github.com/jaswanthkumarreddy999/pixel-literacy-quest.git
+
 
 # Upload Source Code
 git push -u origin main
@@ -46,7 +45,7 @@ git commit -m "Deploy web"
 git branch -M gh-pages
 
 # Connect and Force Push to gh-pages branch
-git remote add origin https://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@github.com/jaswanthkumarreddy999/pixel-literacy-quest.git
+git remote add origin 
 git push -u origin gh-pages --force
 3. Routine Update Workflow (Use this often)
 Follow these steps every time you change your Python code.
