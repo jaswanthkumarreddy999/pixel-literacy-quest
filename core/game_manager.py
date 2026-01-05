@@ -92,9 +92,9 @@ class GameManager:
             "Medicines": "hospital", "fever": "hospital", "Heart Attack": "hospital",
             "School Fees": "school", "Clothes": "store", "House Repairs": "apartment",
             "Rent": "apartment", "Wifi": "bank", "Cinema": "store",
-            "Fancy Dinner": "store", "Headphones": "store", "Video Game": "store",
-            "Concert Tickets": "store", "TV": "store", "Smart Watch": "store",
-            "New Phone": "store", "School Vacation ": "bank" 
+            "Dinner": "store", "Headphones": "store", "Video Game": "store",
+            "Concert Ticket": "store", "TV": "store", "Watch": "store",
+            "Phone": "store", "Vacation": "bank" 
         }
 
         self.quiz_questions = [
