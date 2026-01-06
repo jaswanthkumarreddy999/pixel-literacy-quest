@@ -1,6 +1,7 @@
 import pygame
 import sys
 import asyncio
+import platform
 from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, COLORS
 from core.game_manager import GameManager
 
@@ -15,9 +16,9 @@ async def main():
     
     # --- WINDOW INITIALIZATION ---
     is_fullscreen = False
+    IS_WEB = sys.platform == "emscripten"
     
-    # WEB CHECK: Browsers prefer standard windowed modes
-    if sys.platform == "emscripten":
+    if IS_WEB:
         screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     else:
         screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
@@ -43,12 +44,10 @@ async def main():
     p2_name_input = ""
     game_manager = None 
 
-    # --- TOP RIGHT CONTROL BUTTONS ---
+    # UI Rects
     close_rect = pygame.Rect(SCREEN_WIDTH - 45, 10, 30, 30)
     toggle_rect = pygame.Rect(SCREEN_WIDTH - 85, 10, 30, 30)
     min_rect = pygame.Rect(SCREEN_WIDTH - 125, 10, 30, 30)
-
-    # Menu Buttons
     btn_play_rect = pygame.Rect(SCREEN_WIDTH//2 - 100, 300, 200, 50)
     btn_exit_rect = pygame.Rect(SCREEN_WIDTH//2 - 100, 380, 200, 50)
 
@@ -62,96 +61,84 @@ async def main():
             if event.type == pygame.QUIT:
                 running = False
             
-            # --- CUSTOM WINDOW CONTROLS LOGIC ---
+            # --- HIDDEN Q KEY LOGIC ---
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    if game_state == MENU:
+                        running = False  
+                    else:
+                        game_state = MENU  
+                        game_manager = None
+
+            # --- WINDOW CONTROLS LOGIC ---
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if close_rect.collidepoint(event.pos):
                     running = False
-                elif min_rect.collidepoint(event.pos):
+                elif min_rect.collidepoint(event.pos) and not IS_WEB:
                     pygame.display.iconify()
                 elif toggle_rect.collidepoint(event.pos):
-                    # Only apply actual Fullscreen flag if NOT on web
-                    is_fullscreen = not is_fullscreen
-                    if sys.platform != "emscripten":
+                    if IS_WEB:
+                        platform.window.eval("""
+                            if (!document.fullscreenElement) {
+                                document.documentElement.requestFullscreen();
+                            } else if (document.exitFullscreen) {
+                                document.exitFullscreen();
+                            }
+                        """)
+                    else:
+                        is_fullscreen = not is_fullscreen
                         if is_fullscreen:
                             screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
                         else:
                             screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
-                    else:
-                        # On Web, we let the browser's own Fullscreen button handle it
-                        print("Fullscreen toggled - Browser handling scaling")
 
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_F11 and sys.platform != "emscripten":
-                    is_fullscreen = not is_fullscreen
-                    if is_fullscreen:
-                        screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
-                    else:
-                        screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
-                
-                if event.key == pygame.K_q and game_state != GAMEPLAY:
-                    running = False
-
-            # --- MENU LOGIC ---
-            if game_state == MENU:
-                if btn_play_rect.collidepoint(mouse_pos) or btn_exit_rect.collidepoint(mouse_pos):
-                    hover_ui = True
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if btn_play_rect.collidepoint(event.pos):
-                        game_state = INPUT_P1
-                        p1_name_input = ""
-                    elif btn_exit_rect.collidepoint(event.pos):
-                        running = False
-
-            # --- NAME INPUT LOGIC ---
-            elif game_state in [INPUT_P1, INPUT_P2]:
+            # --- INPUT HANDLING ---
+            if game_state in [INPUT_P1, INPUT_P2]:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
-                        if game_state == INPUT_P1:
-                            p1_name_input = p1_name_input.strip() or "PLAYER 1"
+                        if game_state == INPUT_P1 and p1_name_input.strip():
                             game_state = INPUT_P2
-                            p2_name_input = ""
-                        else:
-                            p2_name_input = p2_name_input.strip() or "PLAYER 2"
-                            game_manager = GameManager(screen, p1_name_input, p2_name_input)
+                        elif game_state == INPUT_P2 and p2_name_input.strip():
+                            game_manager = GameManager(screen, p1_name_input.strip(), p2_name_input.strip())
                             game_state = GAMEPLAY
                     elif event.key == pygame.K_BACKSPACE:
                         if game_state == INPUT_P1: p1_name_input = p1_name_input[:-1]
                         else: p2_name_input = p2_name_input[:-1]
-                    elif event.key == pygame.K_ESCAPE:
-                        game_state = MENU
-                    else:
-                        if event.unicode.isprintable() and len(event.unicode) > 0:
+                    elif event.unicode.isprintable() and len(event.unicode) > 0:
+                        # Ensure 'q' doesn't get typed as it's our escape key
+                        if event.key != pygame.K_q:
                             if game_state == INPUT_P1 and len(p1_name_input) < 12:
                                 p1_name_input += event.unicode
                             elif game_state == INPUT_P2 and len(p2_name_input) < 12:
                                 p2_name_input += event.unicode
 
-            # --- GAMEPLAY OVER LOGIC ---
+            # --- GAMEPLAY RESTART LOGIC ---
             elif game_state == GAMEPLAY and game_manager and game_manager.winner:
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
                     game_state = MENU
                     game_manager = None
 
-        # --- CURSOR UPDATE ---
-        if any(r.collidepoint(mouse_pos) for r in [close_rect, toggle_rect, min_rect]):
-            hover_ui = True
-        if game_state == GAMEPLAY and game_manager:
-            if any(r['rect'].collidepoint(mouse_pos) for r in game_manager.hud.click_regions):
-                hover_ui = True
-        
-        cursor_style = pygame.SYSTEM_CURSOR_HAND if hover_ui else pygame.SYSTEM_CURSOR_ARROW
-        pygame.mouse.set_cursor(cursor_style)
+            # --- MENU BUTTONS ---
+            elif game_state == MENU:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if btn_play_rect.collidepoint(event.pos):
+                        game_state = INPUT_P1
+                        p1_name_input = ""
+                        p2_name_input = ""
+                    elif btn_exit_rect.collidepoint(event.pos):
+                        running = False
 
         # --- RENDERING ---
         if bg_image:
             screen.blit(bg_image, (0, 0))
         else:
-            screen.fill(COLORS['menu_bg'])
+            screen.fill(COLORS.get('menu_bg', (30, 30, 30)))
 
         # --- DRAW CUSTOM WINDOW CONTROLS ---
         for r, icon in [(min_rect, "min"), (toggle_rect, "square"), (close_rect, "x")]:
             col = (200, 50, 50) if icon == "x" and r.collidepoint(mouse_pos) else (80, 80, 80) if r.collidepoint(mouse_pos) else (40, 40, 40)
             pygame.draw.rect(screen, col, r, border_radius=5)
+            
             if icon == "min":
                 pygame.draw.line(screen, (255, 255, 255), (r.x + 8, r.centery + 5), (r.right - 8, r.centery + 5), 2)
             elif icon == "square":
@@ -163,25 +150,38 @@ async def main():
         if game_state == MENU:
             title_surf = font_title.render("PIXEL LITERACY QUEST", True, (255, 255, 255))
             screen.blit(title_surf, (SCREEN_WIDTH//2 - title_surf.get_width()//2, 150))
+            
             for btn, txt in [(btn_play_rect, "PLAY GAME"), (btn_exit_rect, "EXIT")]:
-                col = COLORS['btn_hover'] if btn.collidepoint(mouse_pos) else COLORS['btn_normal']
-                pygame.draw.rect(screen, col, btn, border_radius=10)
-                pygame.draw.rect(screen, (255, 255, 255), btn, 2, border_radius=10)
-                label = font_btn.render(txt, True, (255, 255, 255))
-                screen.blit(label, (btn.centerx - label.get_width()//2, btn.centery - label.get_height()//2))
-
-        elif game_state == INPUT_P1:
-            draw_input_screen(screen, font_title, font_input, "ENTER PLAYER 1 NAME:", p1_name_input, COLORS['p1_bg'])
-        elif game_state == INPUT_P2:
-            draw_input_screen(screen, font_title, font_input, "ENTER PLAYER 2 NAME:", p2_name_input, COLORS['p2_bg'])
-        elif game_state == GAMEPLAY:
-            if game_manager:
+                c = COLORS['btn_hover'] if btn.collidepoint(mouse_pos) else COLORS['btn_normal']
+                pygame.draw.rect(screen, c, btn, border_radius=10)
+                lbl = font_btn.render(txt, True, (255, 255, 255))
+                screen.blit(lbl, (btn.centerx - lbl.get_width()//2, btn.centery - lbl.get_height()//2))
+        
+        elif game_state in [INPUT_P1, INPUT_P2]:
+            prompt = "ENTER PLAYER 1 NAME:" if game_state == INPUT_P1 else "ENTER PLAYER 2 NAME:"
+            text = p1_name_input if game_state == INPUT_P1 else p2_name_input
+            draw_input_screen(screen, font_title, font_input, prompt, text, COLORS['p1_bg' if game_state == INPUT_P1 else 'p2_bg'])
+        
+        elif game_state == GAMEPLAY and game_manager:
+            if not game_manager.winner:
                 game_manager.handle_input(events)
-                game_manager.update()
-                game_manager.draw()
-                if not game_manager.running:
-                    game_state = MENU
-                    game_manager = None
+            
+            game_manager.update()
+            game_manager.draw()
+
+            if game_manager.winner:
+                overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 200))
+                screen.blit(overlay, (0, 0))
+
+                winner_obj = game_manager.winner
+                winner_name = winner_obj.name if hasattr(winner_obj, 'name') else str(winner_obj)
+                
+                win_txt = font_title.render(f"{winner_name.upper()} WINS!", True, (255, 215, 0))
+                hint_txt = font_btn.render("Press ENTER to Return to Menu", True, (255, 255, 255))
+                
+                screen.blit(win_txt, (SCREEN_WIDTH//2 - win_txt.get_width()//2, SCREEN_HEIGHT//2 - 50))
+                screen.blit(hint_txt, (SCREEN_WIDTH//2 - hint_txt.get_width()//2, SCREEN_HEIGHT//2 + 30))
 
         pygame.display.flip()
         clock.tick(FPS)
@@ -197,12 +197,11 @@ def draw_input_screen(screen, title_font, input_font, prompt, current_text, acce
     prompt_surf = title_font.render(prompt, True, (255, 255, 255))
     screen.blit(prompt_surf, (SCREEN_WIDTH//2 - prompt_surf.get_width()//2, 200))
     input_rect = pygame.Rect(SCREEN_WIDTH//2 - 200, 300, 400, 60)
-    pygame.draw.rect(screen, COLORS['input_bg'], input_rect, border_radius=10)
+    pygame.draw.rect(screen, (50, 50, 50), input_rect, border_radius=10)
     pygame.draw.rect(screen, accent_col, input_rect, 3, border_radius=10)
-    txt_surf = input_font.render(current_text + "|", True, (255, 255, 255))
+    cursor = "|" if (pygame.time.get_ticks() // 500) % 2 == 0 else ""
+    txt_surf = input_font.render(current_text + cursor, True, (255, 255, 255))
     screen.blit(txt_surf, (input_rect.centerx - txt_surf.get_width()//2, input_rect.centery - txt_surf.get_height()//2))
-    hint = input_font.render("Press ENTER to confirm • ESC to go back", True, COLORS['text_dim'])
-    screen.blit(hint, (SCREEN_WIDTH//2 - hint.get_width()//2, 420))
 
 if __name__ == "__main__":
     asyncio.run(main())
