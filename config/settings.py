@@ -60,7 +60,7 @@ GAME_NEEDS = [
     ("Heart Attack", 80),
     ("School Fees", 200), 
     ("Clothes", 200), 
-    ("House Repairs", 250), 
+    ("water bill", 250), 
     ("Rent", 300)
 ]
 
@@ -70,7 +70,7 @@ GAME_WANTS = [
     ("Dinner", 100, 5),
     ("Headphones", 120, 8), 
     ("Video Game", 150, 10), 
-    ("Concert Ticket", 150, 10),
+    ("Movie Ticket", 150, 10),
     ("TV", 200, 15), 
     ("Watch", 250, 20), 
     ("Phone", 400, 25), 

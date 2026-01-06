@@ -15,12 +15,8 @@ async def main():
     
     # --- FIX FOR WEB RENDERER ERROR ---
     if sys.platform == "emscripten":
-        # WEB MODE: Do NOT use SCALED or FULLSCREEN. 
-        # The browser handles the canvas size automatically.
-        # Using flags here causes "failed to create renderer".
         screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     else:
-        # DESKTOP MODE: Use scaling and fullscreen for better experience
         screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SCALED | pygame.FULLSCREEN)
 
     pygame.display.set_caption("Pixel Literacy Quest")
@@ -34,7 +30,7 @@ async def main():
     except Exception as e:
         print(f"Menu Background Warning: {e}")
 
-    # --- FONTS (Use default None for Web safety) ---
+    # --- FONTS ---
     font_title = pygame.font.Font(None, 60)
     font_btn = pygame.font.Font(None, 40)
     font_input = pygame.font.Font(None, 50)
@@ -93,6 +89,15 @@ async def main():
                             elif game_state == INPUT_P2 and len(p2_name_input) < 12:
                                 p2_name_input += event.unicode
 
+            # --- RESTART LOGIC (DETECT ENTER AFTER GAME OVER) ---
+            elif game_state == GAMEPLAY and game_manager and game_manager.winner:
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
+                    # Reset all variables to go back to the start
+                    game_state = MENU
+                    p1_name_input = ""
+                    p2_name_input = ""
+                    game_manager = None
+
         # --- DRAWING ---
         if bg_image:
             screen.blit(bg_image, (0, 0))
@@ -102,7 +107,6 @@ async def main():
         mouse_pos = pygame.mouse.get_pos()
 
         if game_state == MENU:
-            # Title
             title_surf = font_title.render("PIXEL LITERACY QUEST", True, COLORS['white'])
             screen.blit(title_surf, (SCREEN_WIDTH//2 - title_surf.get_width()//2, 150))
 
@@ -132,12 +136,12 @@ async def main():
                 game_manager.update()
                 game_manager.draw()
             else:
-                running = False
+                # Fallback if GameManager stops running internally
+                game_state = MENU
+                game_manager = None
 
         pygame.display.flip()
         clock.tick(FPS)
-        
-        # --- WEB REQUIREMENT ---
         await asyncio.sleep(0)
 
     pygame.quit()

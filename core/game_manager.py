@@ -90,10 +90,10 @@ class GameManager:
         self.item_locations = {
             "Fire Accident": "fire_station", "Groceries": "store", "Food": "store",
             "Medicines": "hospital", "fever": "hospital", "Heart Attack": "hospital",
-            "School Fees": "school", "Clothes": "store", "House Repairs": "apartment",
+            "School Fees": "school", "Clothes": "store", "water bill": "apartment",
             "Rent": "apartment", "Wifi": "bank", "Cinema": "store",
             "Dinner": "store", "Headphones": "store", "Video Game": "store",
-            "Concert Ticket": "store", "TV": "store", "Watch": "store",
+            "Movie Ticket": "store", "TV": "store", "Watch": "store",
             "Phone": "store", "Vacation": "bank" 
         }
 
