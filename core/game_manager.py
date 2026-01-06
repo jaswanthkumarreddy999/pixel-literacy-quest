@@ -110,11 +110,9 @@ class GameManager:
     def start_new_turn(self):
         p = self.get_current_player()
         
-        # --- 1. HEALTH PENALTY (New) ---
-        # Count pending needs BEFORE adding new ones
+        # --- 1. HEALTH PENALTY ---
         unpaid_count = len(p.pending_needs)
         health_penalty_msg = ""
-        
         if unpaid_count > 0:
             p.health -= unpaid_count
             health_penalty_msg = f"Lost {unpaid_count} HP (Unpaid Bills)! "
@@ -122,11 +120,9 @@ class GameManager:
         # --- 2. GAME OVER CHECK ---
         if p.health <= 0:
             p.health = 0
-            # Opponent wins
             opponent_idx = 1 if self.turn_index == 0 else 0
             self.winner = self.players[opponent_idx]
             self.message = f"{p.name} Health 0! {self.winner.name} WINS!"
-            # Stop here, do not give income
             return
 
         # --- 3. INCOME & INTEREST ---
@@ -148,37 +144,29 @@ class GameManager:
             self.scammer_freeze_timer -= 1
         
         # --- 4. NEW BILLS ---
-        new_items_msg = ""
         if p.next_need_index < len(p.game_needs):
             p.pending_needs.append(p.game_needs[p.next_need_index])
             p.next_need_index += 1
-            new_items_msg += "Bill Added. "
         if p.next_want_index < len(p.game_wants):
             p.pending_wants.append(p.game_wants[p.next_want_index])
             p.next_want_index += 1
-            new_items_msg += "Item Added."
         
         self.turn_phase = "ACTION"
         self.selection_mode = None
         self.in_bank = False 
         self.scam_active = False
-        
         self.dice_rolled = False
         self.dice_visible = False
         self.moves_left = 0
         self.dice_vals = [1, 1]
         
-        # Add the health msg to the main message
         self.message = f"{health_penalty_msg}Income Received. Press SPACE to ROLL!"
 
     def handle_input(self, events):
         for event in events:
-            if self.scam_active and event.type == pygame.MOUSEBUTTONDOWN:
-                if self.hud.close_btn_rect and self.hud.close_btn_rect.collidepoint(event.pos):
-                    self.message = "Panic! You hung up but lost money."
-                    self.apply_scam_penalty(0.10)
-                    self.end_scam()
-                    return
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1: # Left Click
+                    self.handle_mouse_click(event.pos)
 
             if event.type == pygame.KEYDOWN:
                 if self.scam_active:
@@ -205,6 +193,29 @@ class GameManager:
                 elif self.turn_phase == "END":
                     if event.key == pygame.K_RETURN: self.end_turn()
 
+    def handle_mouse_click(self, pos):
+        """Processes HUD click regions for selection and dice rolling."""
+        if self.winner: return
+        
+        # Special check for scam window close button
+        if self.scam_active and self.hud.close_btn_rect:
+            if self.hud.close_btn_rect.collidepoint(pos):
+                self.message = "Panic! You hung up but lost money."
+                self.apply_scam_penalty(0.10)
+                self.end_scam()
+                return
+
+        # Check interactive regions defined by the HUD
+        for region in self.hud.click_regions:
+            if region['rect'].collidepoint(pos):
+                if region['type'] == 'DICE' and not self.dice_rolled and not self.in_bank:
+                    self.roll_dice_animation()
+                elif region['type'] == 'SEL' and self.turn_phase == "ACTION":
+                    self.selection_mode = region['mode']
+                    self.selection_index = region['idx']
+                    self.message = f"Selected {self.selection_mode}. Press ENTER to Pay/Buy."
+                return
+
     def roll_dice_animation(self):
         self.dice_visible = True
         for _ in range(10):
@@ -224,7 +235,6 @@ class GameManager:
     def trigger_scam_event(self):
         self.scam_active = True
         self.scam_input = ""
-        
         if random.random() < 0.5:
             self.scam_type = "OTP"
             self.scam_data['digits'] = [random.randint(1, 9) for _ in range(4)]
@@ -234,7 +244,6 @@ class GameManager:
             self.scam_type = "QUIZ"
             self.scam_data['questions'] = random.sample(self.quiz_questions, 3) 
             self.scam_data['current_q_idx'] = 0
-            self.load_next_quiz_question()
 
     def generate_otp_problem(self):
         target = self.scam_data['digits'][self.scam_data['current_idx']]
@@ -248,19 +257,12 @@ class GameManager:
             b = a - target
             self.scam_data['problem'] = f"{a} - {b} = ?"
         
-    def load_next_quiz_question(self):
-        if self.scam_data['current_q_idx'] < len(self.scam_data['questions']):
-            pass 
-        else:
-            self.end_scam()
-
     def handle_scam_input(self, event):
         if event.key == pygame.K_ESCAPE:
             self.message = "Panic! You cancelled verification."
             self.apply_scam_penalty(0.10)
             self.end_scam()
             return
-
         if event.key == pygame.K_RETURN:
             if self.scam_type == "OTP":
                 target = self.scam_data['digits'][self.scam_data['current_idx']]
@@ -277,9 +279,7 @@ class GameManager:
                     self.end_scam()
             elif self.scam_type == "QUIZ":
                 q_data = self.scam_data['questions'][self.scam_data['current_q_idx']]
-                correct_ans = q_data['a'].lower()
-                user_ans = self.scam_input.lower()
-                if correct_ans in user_ans:
+                if q_data['a'].lower() in self.scam_input.lower():
                     self.message = "Correct!"
                 else:
                     self.message = "Wrong! Penalty applied."
@@ -288,8 +288,6 @@ class GameManager:
                 self.scam_input = ""
                 if self.scam_data['current_q_idx'] >= len(self.scam_data['questions']):
                     self.end_scam()
-                else:
-                    self.load_next_quiz_question()
         elif event.key == pygame.K_BACKSPACE:
             self.scam_input = self.scam_input[:-1]
         else:
@@ -361,8 +359,6 @@ class GameManager:
             if event.key == pygame.K_BACKSPACE: self.input_text = self.input_text[:-1]
             else:
                 if event.unicode.isdigit(): self.input_text += event.unicode
-            if self.bank_mode == "FD_TURNS": self.message = f"Duration > {self.input_text}"
-            else: self.message = f"{self.bank_mode}: Type amount > {self.input_text}"
 
     def process_bank_transaction(self, p, amount):
         if self.bank_mode == "DEPOSIT":
@@ -542,9 +538,8 @@ class GameManager:
         self.message = "Turn Done. Press ENTER for Next Player."
 
     def check_win_condition(self, p):
-        # Trigger end game when the list is complete
         if len(p.completed_needs) >= 10 and len(p.completed_wants) >= 10:
-            self.winner = p # This player "finished" first, but HUD calculates score
+            self.winner = p
             self.message = "Calculating Scores..."
 
     def end_turn(self):
@@ -566,4 +561,5 @@ class GameManager:
         dice_to_draw = self.dice_vals if self.dice_visible else None
         self.hud.draw(self.players[0], self.players[1], self.turn_index, self.message, self.winner, self.selection_mode, self.selection_index, self.scam_active, self.scam_type, self.scam_data, self.scam_input, dice_to_draw)
     
-    def update(self): pass
+    def update(self):
+        pass
