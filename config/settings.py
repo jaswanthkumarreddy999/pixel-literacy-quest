@@ -33,9 +33,9 @@ COLORS = {
 }
 
 # --- ECONOMY RULES ---
-STARTING_WALLET = 20000
-STARTING_BANK = 1000
-MONTHLY_INCOME = 0
+STARTING_WALLET = 1000
+STARTING_BANK = 2000
+MONTHLY_INCOME = 100
 
 LOAN_INTEREST = 0.10     
 SAVINGS_INTEREST = 0 
@@ -110,3 +110,9 @@ QUIZ_QUESTIONS = [
     {"q": "Full form of ATM?", "a": "Automated Teller", "opts": ["Any Time Money", "Automated Teller", "All Time Money"]},
     {"q": "CVV is on which side?", "a": "Back", "opts": ["Front", "Back", "Chip"]},
 ]
+
+# --- SCORING WEIGHTS ---
+SCORE_WEALTH_DIVIDER = 10     
+SCORE_HEALTH_MULTIPLIER = 100 
+SCORE_TASK_MULTIPLIER = 150   
+SCORE_FINISH_BONUS = 500      
