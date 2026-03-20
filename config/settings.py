@@ -38,10 +38,15 @@ STARTING_BANK = 2000
 MONTHLY_INCOME = 100
 
 LOAN_INTEREST = 0.10     
+LOAN_REPAY_TURNS = 3
+LOAN_REPAY_MULTIPLIER = 2.0
 SAVINGS_INTEREST = 0 
 FD_INTEREST = 0.15       
 FD_LOCK_TURNS = 3 
 FD_PER_TURN_RATE = 0.05      
+
+# --- DIGITAL PAYMENTS ---
+DIGITAL_ONLY = ["Rent", "water bill", "Wifi"]
 
 # --- SCAM & DIFFICULTY SETTINGS ---
 SCAM_FREEZE_TURNS = 3        
@@ -104,11 +109,11 @@ ITEM_LOCATIONS = {
 }
 
 QUIZ_QUESTIONS = [
-    {"q": "OTP valid for how long?", "a": "10 min", "opts": ["10 min", "1 hour", "Forever"]},
-    {"q": "Share PIN with?", "a": "No One", "opts": ["Bank", "No One", "Friends"]},
-    {"q": "Green lock on URL means?", "a": "Secure", "opts": ["Secure", "Hacked", "Open"]},
-    {"q": "Full form of ATM?", "a": "Automated Teller", "opts": ["Any Time Money", "Automated Teller", "All Time Money"]},
-    {"q": "CVV is on which side?", "a": "Back", "opts": ["Front", "Back", "Chip"]},
+    {"q": "OTP valid for how long?", "a": "10 min", "opts": ["10 min", "1 hour", "Forever"], "exp": "OTPs usually expire in 10 minutes!"},
+    {"q": "Share PIN with?", "a": "No One", "opts": ["Bank", "No One", "Friends"], "exp": "Never share your PIN, not even with the bank!"},
+    {"q": "Green lock on URL means?", "a": "Secure", "opts": ["Secure", "Hacked", "Open"], "exp": "A green lock means the website is secure (HTTPS)."},
+    {"q": "Full form of ATM?", "a": "Automated Teller", "opts": ["Any Time Money", "Automated Teller", "All Time Money"], "exp": "ATM means Automated Teller Machine."},
+    {"q": "CVV is on which side?", "a": "Back", "opts": ["Front", "Back", "Chip"], "exp": "The CVV is the 3-digit security code on the back."},
 ]
 
 # --- SCORING WEIGHTS ---
@@ -116,3 +121,43 @@ SCORE_WEALTH_DIVIDER = 10
 SCORE_HEALTH_MULTIPLIER = 100 
 SCORE_TASK_MULTIPLIER = 150   
 SCORE_FINISH_BONUS = 500      
+
+# --- FINANCIAL TIP CARDS (Feature 12) ---
+SCAM_TIPS = {
+    "OTP":        ("TIP: OTP Security",        "Never share your OTP with anyone — not even\nyour bank or a support agent. OTPs expire in\n10 minutes and are single-use only."),
+    "PICKPOCKET": ("TIP: Cash Safety",          "Always keep cash in a secured wallet. Prefer\nUPI or card payments in public places.\nReport theft immediately to police."),
+    "QUIZ":       ("TIP: Digital Payments",     "Always verify before you pay. Check the\nrecipient's UPI ID carefully. Use only\nofficial bank apps to transact."),
+}
+
+# --- RANDOM EVENTS (Feature 2) ---
+RANDOM_EVENTS = [
+    {"name": "Salary Bonus!",       "desc": "Company paid a bonus!",           "type": "wallet",  "amount":  300},
+    {"name": "Market Crash!",       "desc": "Your savings dipped slightly.",    "type": "bank",    "amount": -200},
+    {"name": "Medical Emergency!",  "desc": "Unexpected hospital bill.",        "type": "wallet",  "amount": -150},
+    {"name": "Lucky Find!",         "desc": "Found money on the street!",      "type": "wallet",  "amount":  100},
+    {"name": "Tax Refund!",         "desc": "Government refunded tax.",         "type": "wallet",  "amount":  250},
+    {"name": "Phone Bill!",         "desc": "Monthly phone bill due.",         "type": "wallet",  "amount": -80},
+    {"name": "Investment Return!",  "desc": "Your FD earned extra interest.",  "type": "bank",    "amount":  150},
+    {"name": "Theft!",              "desc": "Pickpocket stole some cash!",     "type": "wallet",  "amount": -120},
+]
+RANDOM_EVENT_INTERVAL = 4   # trigger every N turns
+
+# --- MINI-BUDGET CHALLENGE (Feature 4) ---
+BUDGET_CHALLENGE_INTERVAL = 6   # every N turns
+BUDGET_AMOUNT = 500
+BUDGET_OPTIONS = [
+    {"label": "Save More",    "desc": "+Rs.350 to Bank, +5 Health",       "bank": 350, "wallet": 0,   "health": 5,  "happy": 0},
+    {"label": "Stay Healthy", "desc": "+Rs.150 to Bank, +20 Health, +5 Happy", "bank": 150, "wallet": 0, "health": 20, "happy": 5},
+    {"label": "Enjoy Life",   "desc": "+Rs.100 to Bank, +5 Health, +30 Happy", "bank": 100, "wallet": 0, "health": 5,  "happy": 30},
+]
+
+# --- AVATAR COLORS (Feature 9) ---
+AVATAR_COLORS = [
+    (46, 204, 113),    # Emerald green
+    (52, 152, 219),    # Sky blue
+    (231, 76, 60),     # Red
+    (241, 196, 15),    # Yellow
+    (155, 89, 182),    # Purple
+    (230, 126, 34),    # Orange
+]
+AVATAR_NAMES = ["Emerald", "Sky", "Red", "Yellow", "Purple", "Orange"]

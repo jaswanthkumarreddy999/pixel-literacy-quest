@@ -1,17 +1,21 @@
 import pygame
 import random
-from config.settings import *
+from config.settings import COLORS, STARTING_WALLET, STARTING_BANK, GAME_NEEDS, GAME_WANTS
 
 class Player:
-    def __init__(self, id, name, start_pos):
+    def __init__(self, id, name, start_pos, avatar_color=None):
         self.id = id
         self.name = name
         self.grid_pos = list(start_pos)
+        self.avatar_color = avatar_color or COLORS['p1_bg']
+        self.is_ai = False
+
         
         # Financial & Game Stats
         self.wallet = STARTING_WALLET       
         self.bank_balance = STARTING_BANK   
         self.loan = 0
+        self.loan_timer = 0
         self.fd_balance = 0
         self.fd_timer = 0
         self.fd_rate = 0.0
@@ -20,6 +24,7 @@ class Player:
         self.health = 100       
         self.happiness = 0
         self.inventory = [] 
+        self.seen_popups = set()
         
         # Task Management
         self.next_need_index = 0

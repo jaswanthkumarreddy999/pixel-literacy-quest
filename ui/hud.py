@@ -2,7 +2,11 @@ import pygame
 import sys
 import platform
 import ctypes
-from config.settings import *
+from config.settings import (
+    SCREEN_WIDTH, SCREEN_HEIGHT, COLORS, DIGITAL_ONLY, BUDGET_OPTIONS,
+    MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, GRID_COLS, GRID_ROWS,
+    MAP_X, MAP_Y, ICON_SIZE, MONTHLY_INCOME
+)
 from config.assets import loader
 
 # --- DPI AWARENESS FIX (Windows Only) ---
@@ -42,7 +46,7 @@ class HUD:
         self.click_regions = [] 
         self.close_btn_rect = None
 
-    def draw(self, p1, p2, turn_idx, message, winner, sel_mode, sel_idx, scam_active=False, scam_type=None, scam_data=None, scam_input="", dice_vals=None):
+    def draw(self, p1, p2, turn_idx, logs, winner, sel_mode, sel_idx, scam_active=False, scam_type=None, scam_data=None, scam_input="", dice_vals=None, popup_active=False, popup_message="", scam_failed=False, scam_explanation="", game_manager=None):
         self.click_regions = [] # Reset click map every frame
         
         # Draw Player 1 Panels
@@ -55,8 +59,11 @@ class HUD:
         self.draw_player_panel(990, 20, p2, border_c, p2.name, COLORS['p2_bg'])
         self.draw_checklist(990, 390, p2, (turn_idx == 1), sel_mode, sel_idx)
 
-        if not scam_active and not winner:
-            self.draw_log_bar(message)
+        if not scam_active and not winner and not popup_active:
+            self.draw_log_bar(logs)
+            
+        if popup_active:
+            self.draw_knowledge_popup(popup_message)
         
         if dice_vals and not winner:
             self.draw_dice(dice_vals)
@@ -65,7 +72,27 @@ class HUD:
             self.draw_scorecard(p1, p2, winner)
             
         if scam_active:
-            self.draw_scam_window(scam_type, scam_data, scam_input)
+            self.draw_scam_window(scam_type, scam_data, scam_input, scam_failed, scam_explanation)
+
+        if game_manager:
+            if getattr(game_manager, 'in_bank', False) and getattr(game_manager, 'bank_mode', "MENU") == "MENU":
+                self.draw_bank_menu(game_manager.get_current_player(), game_manager)
+                
+            if getattr(game_manager, 'budget_active', False):
+                self.draw_budget_window(game_manager.budget_player)
+                
+            if getattr(game_manager, 'popup_active', False):
+                self.draw_knowledge_popup(game_manager.popup_message)
+            
+            if getattr(game_manager, 'tip_active', False):
+                self.draw_tip_card(game_manager.tip_title, game_manager.tip_text)
+                
+            # Draw Floating Texts
+            for ft in getattr(game_manager, 'float_texts', []):
+                # txt_col = list(ft['color']) + [int(ft['alpha'])] # This line is not needed for render
+                font_surf = self.font_md.render(ft['text'], True, ft['color'])
+                font_surf.set_alpha(ft['alpha'])
+                self.screen.blit(font_surf, (ft['x'], ft['y']))
 
     def draw_checklist(self, x, y, p, is_turn, sel_mode, sel_idx):
         w, h = 270, 260
@@ -110,7 +137,8 @@ class HUD:
                 else:
                     col = COLORS['red']
 
-                self.draw_text(f"o {name} ₹{cost}", col1_x, curr_y, size=13, color=col)
+                prefix = "[D] " if name in DIGITAL_ONLY else ""
+                self.draw_text(f"o {prefix}{name} ₹{cost}", col1_x, curr_y, size=12, color=col)
                 curr_y += row_h
 
         # --- DRAW WANTS ---
@@ -138,7 +166,8 @@ class HUD:
                 else:
                     col = COLORS['ui_accent']
                 
-                self.draw_text(f"o {name} ₹{cost}", col2_x, curr_y, size=13, color=col)
+                prefix = "[D] " if name in DIGITAL_ONLY else ""
+                self.draw_text(f"o {prefix}{name} ₹{cost}", col2_x, curr_y, size=12, color=col)
                 curr_y += row_h
 
     def draw_dice(self, dice):
@@ -225,19 +254,46 @@ class HUD:
         elif value == 6: dots = [(q1, q1), (q3, q1), (q1, mid), (q3, mid), (q1, q3), (q3, q3)]
         for dx, dy in dots: pygame.draw.circle(self.screen, dot_col, (x + dx, y + dy), dot_r)
 
-    def draw_log_bar(self, message):
-        h, w = 60, 850
+    def draw_log_bar(self, logs):
+        h, w = 90, 850
         y, x = SCREEN_HEIGHT - h - 10, (SCREEN_WIDTH - w) // 2
         s = pygame.Surface((w, h), pygame.SRCALPHA)
-        pygame.draw.rect(s, (20, 20, 25, 240), (0, 0, w, h), border_radius=30)
+        # Glassmorphic: Lower alpha (140) and draw border on the same surface
+        pygame.draw.rect(s, (20, 20, 25, 140), (0, 0, w, h), border_radius=30)
+        pygame.draw.rect(s, (100, 100, 120, 180), (0, 0, w, h), 2, border_radius=30)
         self.screen.blit(s, (x, y))
-        pygame.draw.rect(self.screen, COLORS['ui_border'], (x, y, w, h), 2, border_radius=30)
-        col = COLORS['text_main']
-        if "SCAMMED" in message: col = COLORS['negative']
-        elif "WINS" in message: col = COLORS['gold']
-        txt = self.font_lg.render(message, True, col)
-        rect = txt.get_rect(center=(SCREEN_WIDTH // 2, y + h // 2))
-        self.screen.blit(txt, rect)
+        
+        if not isinstance(logs, list): logs = [logs]
+            
+        start_y = y + 15
+        for i, msg in enumerate(logs[-3:]):
+            col = COLORS['text_dim'] if i < len(logs[-3:]) - 1 else COLORS['text_main']
+            if "SCAMMED" in msg or "LOAN DUE" in msg or "Lost" in msg or "PICKPOCKET" in msg: col = COLORS['negative']
+            elif "WINS" in msg or "Paid" in msg or "Bought" in msg: col = COLORS['gold']
+            
+            txt = self.font_md.render(msg, True, col)
+            rect = txt.get_rect(center=(SCREEN_WIDTH // 2, start_y + (i * 25)))
+            self.screen.blit(txt, rect)
+
+    def draw_knowledge_popup(self, message):
+        w, h = 600, 200
+        x, y = (SCREEN_WIDTH - w) // 2, (SCREEN_HEIGHT - h) // 2
+        
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150)) 
+        self.screen.blit(overlay, (0, 0))
+        
+        pygame.draw.rect(self.screen, (30, 40, 60), (x, y, w, h), border_radius=15)
+        pygame.draw.rect(self.screen, COLORS['gold'], (x, y, w, h), 3, border_radius=15)
+        
+        title = self.font_lg.render("DID YOU KNOW?", True, COLORS['gold'])
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, y + 40)))
+        
+        parts = message.split("! ")
+        for i, part in enumerate(parts):
+            txt = part + ("!" if i < len(parts)-1 else "")
+            rendered = self.font_md.render(txt, True, COLORS['white'])
+            self.screen.blit(rendered, rendered.get_rect(center=(SCREEN_WIDTH // 2, y + 90 + (i * 30))))
 
     def draw_panel_bg(self, x, y, w, h, border_col):
         s = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -248,7 +304,7 @@ class HUD:
     def draw_inner_box(self, x, y, w, h):
         pygame.draw.rect(self.screen, (20, 20, 25, 150), (x, y, w, h), border_radius=8)
 
-    def draw_scam_window(self, scam_type, data, user_input):
+    def draw_scam_window(self, scam_type, data, user_input, failed=False, explanation=""):
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200)) 
         self.screen.blit(overlay, (0, 0))
@@ -266,62 +322,192 @@ class HUD:
         self.close_btn_rect = pygame.Rect(close_x, close_y, 35, 35)
 
         content_y = y + 100
+        
+        if failed:
+            self.draw_text("SCAMMED!", x+250, content_y, size=32, color=COLORS['negative'])
+            
+            # wrap explanation if it's too long
+            words = explanation.split(' ')
+            lines = []
+            curr_line = ""
+            for word in words:
+                if len(curr_line) + len(word) < 40:
+                    curr_line += word + " "
+                else:
+                    lines.append(curr_line)
+                    curr_line = word + " "
+            lines.append(curr_line)
+            
+            for i, line in enumerate(lines):
+                 self.draw_text(line, x+40, content_y + 60 + (i*30), size=24, color=COLORS['white'])
+                 
+            self.draw_text("Press ENTER to continue", x+200, y + h - 50, size=20, color=COLORS['gold'])
+            return
+
         if scam_type == "OTP":
             self.draw_text("Verify transaction. Solve:", x+40, content_y, size=20, color=COLORS['text_dim'])
             problem = data.get('problem', "...")
             self.draw_text(f"{problem}", x+250, content_y + 110, size=48, color=COLORS['gold'])
         elif scam_type == "QUIZ":
-            questions, q_idx = data.get('questions', []), data.get('current_q_idx', 0)
+            questions = data.get('questions', [])
+            q_idx = data.get('q_idx', 0)
             if questions and q_idx < len(questions):
                 q_item = questions[q_idx]
-                self.draw_text(q_item['q'], x+40, content_y + 40, size=24, color=COLORS['white'])
+                # Question counter
+                self.draw_text(f"Q {q_idx + 1} / 3", x + w - 100, content_y, size=18, color=COLORS['text_dim'])
+                self.draw_text(q_item['q'], x+40, content_y + 20, size=24, color=COLORS['white'])
+                # Draw A/B/C/D labelled options
+                opt_y = content_y + 70
+                labels = ["A", "B", "C", "D"]
+                label_colors = [
+                    (120, 220, 120),   # A - green
+                    (100, 180, 255),   # B - blue
+                    (255, 200, 80),    # C - yellow
+                    (255, 120, 120),   # D - red
+                ]
+                if 'opts' in q_item:
+                    for i, opt in enumerate(q_item['opts']):
+                        lbl = labels[i] if i < len(labels) else str(i + 1)
+                        lbl_col = label_colors[i] if i < len(label_colors) else COLORS['ui_accent']
+                        # Draw label badge
+                        badge_rect = pygame.Rect(x + 50, opt_y + (i * 42) - 2, 30, 28)
+                        pygame.draw.rect(self.screen, lbl_col, badge_rect, border_radius=6)
+                        self.draw_text(lbl, x + 57, opt_y + (i * 42), size=18, color=COLORS['black'])
+                        # Draw option text
+                        self.draw_text(f"{opt}", x + 95, opt_y + (i * 42), size=20, color=COLORS['ui_accent'])
+                self.draw_text("Type A / B / C / D and press ENTER", x + 40, y + h - 140, size=16, color=COLORS['text_dim'])
 
         input_y = y + h - 100
+        hint = "Your answer (A/B/C/D):" if scam_type == "QUIZ" else "Your answer:"
+        self.draw_text(hint, x + 40, input_y - 28, size=15, color=COLORS['text_dim'])
         pygame.draw.rect(self.screen, (255, 255, 255), (x+180, input_y-5, 300, 45), border_radius=8)
-        self.draw_text(user_input, x+195, input_y+5, size=24, color=COLORS['black'])
+        self.draw_text(user_input.upper(), x+195, input_y+5, size=24, color=COLORS['black'])
 
     def draw_scorecard(self, p1, p2, finisher):
-        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 230))
-        self.screen.blit(overlay, (0, 0))
-        cx, cy = SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2
-        
-        # Calculate scores
         s1 = self.calculate_score(p1, finisher)
         s2 = self.calculate_score(p2, finisher)
-        
-        self.draw_text("FINAL FINANCIAL REPORT", cx - 200, 50, size=32, color=COLORS['gold'])
-        self.draw_score_column(cx - 340, 120, p1, s1, COLORS['p1_bg'])
-        self.draw_score_column(cx + 40, 120, p2, s2, COLORS['p2_bg'])
-        
-        final_winner = p1 if s1['total'] > s2['total'] else p2
-        msg = f"WINNER: {final_winner.name}!" if final_winner else "DRAW!"
-        
-        pygame.draw.rect(self.screen, (50, 50, 50), (cx - 220, 600, 440, 90), border_radius=15)
-        self.draw_text(msg, cx - 100, 610, size=32, color=COLORS['gold'])
-        self.draw_text("Press ENTER to Restart", cx - 90, 655, size=18, color=COLORS['white'])
+        cx = SCREEN_WIDTH // 2
+        is_draw = s1['total'] == s2['total']
+        winner = p1 if s1['total'] >= s2['total'] else p2
+        loser  = p2 if winner == p1 else p1
+        ws     = s1 if winner == p1 else s2
+        ls     = s2 if winner == p1 else s1
+        w_accent = COLORS['p1_bg'] if winner == p1 else COLORS['p2_bg']
+        l_accent = COLORS['p2_bg'] if winner == p1 else COLORS['p1_bg']
 
-    def draw_score_column(self, x, y, p, s, color):
-        w, h = 300, 450
-        pygame.draw.rect(self.screen, (30, 30, 35), (x, y, w, h), border_radius=15)
-        pygame.draw.rect(self.screen, color, (x, y, w, h), 2, border_radius=15)
-        self.draw_text(p.name, x + 20, y + 15, size=26, color=color)
-        current_y = y + 80
-        self.draw_score_row(x, current_y, "Net Worth", f"Rs. {s['raw_savings']}", f"+{s['savings']}", COLORS['positive'])
-        current_y += 45
-        self.draw_score_row(x, current_y, "Health", f"{p.health}", f"+{s['health']}", COLORS['active'])
-        current_y += 45
-        self.draw_score_row(x, current_y, "Happiness", f"{p.happiness}", f"+{s['happy']}", COLORS['gold'])
-        current_y += 45
-        self.draw_score_row(x, current_y, "Debt", f"Rs. {p.loan}", f"{s['debt']}", COLORS['red'])
-        
-        pygame.draw.line(self.screen, (100, 100, 100), (x+20, y+380), (x+w-20, y+380))
-        self.draw_text("TOTAL", x + 20, y + 400, size=20, color=COLORS['white'])
-        self.draw_text(str(s['total']), x + 200, y + 395, size=36, color=color)
+        # ── BACKGROUND ──────────────────────────────────────────────
+        bg = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        bg.fill((6, 8, 18, 252))
+        self.screen.blit(bg, (0, 0))
 
-    def draw_score_row(self, x, y, label, val, pts, col):
-        self.draw_text(label, x + 20, y, size=18, color=COLORS['text_dim'])
-        self.draw_text(pts, x + 230, y, size=20, color=col)
+        # Subtle diagonal grid lines for depth
+        for i in range(0, SCREEN_WIDTH + SCREEN_HEIGHT, 60):
+            pygame.draw.line(self.screen, (18, 20, 30), (i, 0), (i - SCREEN_HEIGHT, SCREEN_HEIGHT), 1)
+
+        # ── HERO BANNER (top zone) ───────────────────────────────────
+        hero_h = 140
+        pygame.draw.rect(self.screen, (10, 10, 20), (0, 0, SCREEN_WIDTH, hero_h))
+        # Gold accent side bars (Premium feel)
+        pygame.draw.rect(self.screen, COLORS['gold'], (0, 0, 8, hero_h))
+        pygame.draw.rect(self.screen, COLORS['gold'], (SCREEN_WIDTH - 8, 0, 8, hero_h))
+        pygame.draw.line(self.screen, COLORS['gold'], (0, hero_h), (SCREEN_WIDTH, hero_h), 3)
+
+        if is_draw:
+            title = self.font_xl.render("DRAW  —  WELL PLAYED!", True, COLORS['ui_accent'])
+            sub   = self.font_md.render("Both players performed equally well", True, COLORS['text_dim'])
+        else:
+            title = self.font_xl.render(f"WINNER  —  {winner.name.upper()}", True, COLORS['gold'])
+            sub   = self.font_md.render("Financial Literacy Champion", True, COLORS['text_dim'])
+
+        self.screen.blit(title, title.get_rect(center=(cx, 60)))
+        self.screen.blit(sub,   sub.get_rect(center=(cx, 105)))
+
+        # ── PLAYER SCORE CARDS ───────────────────────────────────────
+        card_y  = hero_h + 35
+        card_w  = 340
+        card_h  = 430
+        gap     = 50
+        
+        # Centering both cards
+        total_w = (card_w * 2) + gap
+        start_x = (SCREEN_WIDTH - total_w) // 2
+        
+        self._draw_score_card(start_x, card_y, card_w, card_h, winner, ws, w_accent, is_winner=not is_draw)
+        self._draw_score_card(start_x + card_w + gap, card_y, card_w, card_h, loser, ls, l_accent, is_winner=False)
+
+        # ── FOOTER ───────────────────────────────────────────────────
+        footer = self.font_md.render("Press  ENTER  to return to Menu", True, COLORS['gold'])
+        self.screen.blit(footer, footer.get_rect(center=(cx, SCREEN_HEIGHT - 40)))
+
+    def _draw_score_card(self, x, y, w, h, p, s, accent, is_winner=False):
+        # Card background with glassmorphism effect
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        surf.fill((14, 16, 26, 248))
+        self.screen.blit(surf, (x, y))
+
+        border_col = COLORS['gold'] if is_winner else accent
+        pygame.draw.rect(self.screen, border_col, (x, y, w, h), 4 if is_winner else 2, border_radius=16)
+
+        # Header strip
+        hdr_h = 50
+        hdr_col = (60, 45, 0) if is_winner else (accent[0]//5, accent[1]//5, accent[2]//5)
+        pygame.draw.rect(self.screen, hdr_col, (x, y, w, hdr_h), border_top_left_radius=14, border_top_right_radius=14)
+
+        if is_winner:
+            lbl = self.font_lg.render("🏆 WINNER 🏆", True, COLORS['gold'])
+            self.screen.blit(lbl, lbl.get_rect(center=(x + w // 2, y + 25)))
+            name_y = y + 65
+        else:
+            name_y = y + 15
+
+        name_s = self.font_xl.render(p.name, True, border_col)
+        self.screen.blit(name_s, name_s.get_rect(center=(x + w // 2, name_y + 15)))
+
+        # Stats list
+        stats = [
+            ("Wealth Savvy",  f"Rs. {s['raw_savings']}", f"+{s['savings']} Pts", COLORS['positive']),
+            ("Health Care",   f"{p.health}/100",          f"+{s['health']} Pts",  COLORS['active']),
+            ("Happiness",     f"{p.happiness}/100",       f"+{s['happy']} Pts",   COLORS['gold']),
+            ("Debt Control",  f"Rs. {p.loan}",            f"{s['debt']} Pts",    COLORS['negative']),
+        ]
+        
+        ry = name_y + 60
+        row_h = 62
+        for lbl, val, pts, str_col in stats:
+            pygame.draw.line(self.screen, (40, 45, 60), (x + 20, ry), (x + w - 20, ry), 1)
+            
+            l_s = self.font_sm.render(lbl, True, COLORS['text_dim'])
+            v_s = self.font_md.render(val, True, COLORS['white'])
+            p_s = self.font_md.render(pts, True, str_col)
+            
+            self.screen.blit(l_s, (x + 25, ry + 8))
+            self.screen.blit(v_s, (x + 25, ry + 28))
+            self.screen.blit(p_s, p_s.get_rect(right=x + w - 25, y=ry + 28))
+            ry += row_h
+
+        # Big total score at bottom
+        footer_y = y + h - 75
+        pygame.draw.rect(self.screen, (25, 28, 45), (x + 15, footer_y, w - 30, 60), border_radius=12)
+        pygame.draw.rect(self.screen, border_col, (x + 15, footer_y, w - 30, 60), 2, border_radius=12)
+        
+        tot_lbl = self.font_sm.render("TOTAL SCORE", True, COLORS['text_dim'])
+        tot_val = self.font_xl.render(str(s['total']), True, border_col)
+        
+        self.screen.blit(tot_lbl, (x + 25, footer_y + 12))
+        self.screen.blit(tot_val, tot_val.get_rect(right=x + w - 25, centery=footer_y + 30))
+
+        # --- Badges Area ---
+        badges = self._compute_badges(p)
+        if badges:
+            badge_y = footer_y - 35
+            bx = x + 20
+            for b_name, b_col in badges:
+                tw, th = self.font_sm.size(b_name)
+                bw = tw + 16
+                pygame.draw.rect(self.screen, b_col, (bx, badge_y, bw, 22), border_radius=11)
+                b_surf = self.font_sm.render(b_name, True, (0,0,0))
+                self.screen.blit(b_surf, b_surf.get_rect(center=(bx + bw//2, badge_y + 11)))
+                bx += bw + 8
 
     def calculate_score(self, p, finisher):
         savings = p.wallet + p.bank_balance + p.fd_balance
@@ -332,3 +518,96 @@ class HUD:
         score_bonus = 100 if p == finisher else 0
         total = score_savings + score_health + score_happy + score_debt + score_bonus
         return {"savings": score_savings, "health": score_health, "happy": score_happy, "debt": score_debt, "total": total, "raw_savings": savings}
+
+    def _compute_badges(self, player):
+        badges = []
+        if player.bank_balance >= 3000:
+            badges.append(("Smart Saver", COLORS['positive']))
+        if getattr(player, 'loan', 0) == 0:
+            badges.append(("Debt-Free", COLORS['ui_accent']))
+        if len(player.completed_needs) >= 8:
+            badges.append(("Responsible", (155, 89, 182))) 
+        if player.health == 100:
+            badges.append(("Healthy Resident", COLORS['active']))
+        if player.happiness >= 80:
+            badges.append(("Joyful Citizen", COLORS['gold']))
+        return badges[:3]
+
+    def draw_bank_menu(self, player, game_manager):
+        w, h = 500, 360
+        x, y = (SCREEN_WIDTH - w) // 2, (SCREEN_HEIGHT - h) // 2
+        
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 150))
+        self.screen.blit(overlay, (0, 0))
+        
+        pygame.draw.rect(self.screen, (30, 40, 60), (x, y, w, h), border_radius=15)
+        pygame.draw.rect(self.screen, COLORS['ui_accent'], (x, y, w, h), 3, border_radius=15)
+        
+        title = self.font_lg.render("BANK OF PIXEL", True, COLORS['ui_accent'])
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, y + 35)))
+        
+        self.draw_text(f"Wallet: Rs. {player.wallet}", x + 40, y + 80, size=18, color=COLORS['white'])
+        self.draw_text(f"Bank: Rs. {player.bank_balance}", x + 260, y + 80, size=18, color=COLORS['white'])
+        
+        options = [
+            ("1. Deposit Cash (Increases Bank)", 130),
+            ("2. Withdraw Cash (Increases Wallet)", 180),
+            ("3. Create Fixed Deposit (FD)", 230),
+            ("4. Repay Loan", 280),
+        ]
+        
+        for text, opt_y in options:
+            btn_rect = pygame.Rect(x + 40, y + opt_y, w - 80, 40)
+            pygame.draw.rect(self.screen, (45, 50, 70), btn_rect, border_radius=8)
+            self.draw_text(text, x + 60, y + opt_y + 8, size=18, color=COLORS['white'])
+
+        self.draw_text("Press ESC to Close", x + 160, y + h - 35, size=16, color=COLORS['text_dim'])
+
+    def draw_budget_window(self, player):
+        w, h = 600, 450
+        x, y = (SCREEN_WIDTH - w) // 2, (SCREEN_HEIGHT - h) // 2
+        
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        self.screen.blit(overlay, (0, 0))
+        
+        pygame.draw.rect(self.screen, (35, 35, 45), (x, y, w, h), border_radius=20)
+        pygame.draw.rect(self.screen, COLORS['gold'], (x, y, w, h), 3, border_radius=20)
+        
+        title = self.font_xl.render("MONTHLY BUDGET CHALLENGE", True, COLORS['gold'])
+        self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, y + 50)))
+        
+        self.draw_text("You have Rs. 500. How will you split it?", x + 140, y + 100, size=18, color=COLORS['white'])
+        
+        for i, opt in enumerate(BUDGET_OPTIONS):
+            oy = y + 150 + (i * 90)
+            rect = pygame.Rect(x + 50, oy, w - 100, 75)
+            pygame.draw.rect(self.screen, (50, 50, 65), rect, border_radius=12)
+            
+            self.draw_text(f"[{i+1}] {opt['label']}", x + 70, oy + 15, size=22, color=COLORS['active'])
+            self.draw_text(opt['desc'], x + 70, oy + 45, size=16, color=COLORS['text_dim'])
+
+    def draw_tip_card(self, title, text):
+        w, h = 550, 400
+        x, y = (SCREEN_WIDTH - w) // 2, (SCREEN_HEIGHT - h) // 2
+        
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        self.screen.blit(overlay, (0, 0))
+        
+        pygame.draw.rect(self.screen, (40, 45, 60), (x, y, w, h), border_radius=20)
+        pygame.draw.rect(self.screen, COLORS['active'], (x, y, w, h), 3, border_radius=20)
+        
+        # Header
+        pygame.draw.rect(self.screen, (50, 60, 80), (x, y, w, 50), border_top_left_radius=18, border_top_right_radius=18)
+        self.draw_text(title, x + 25, y + 12, size=22, color=COLORS['gold'])
+        
+        # Body
+        lines = text.split('\n')
+        curr_y = y + 80
+        for line in lines:
+            self.draw_text(line, x + 30, curr_y, size=20, color=COLORS['white'])
+            curr_y += 30
+            
+        self.draw_text("Press ENTER to continue", x + 160, y + h - 50, size=18, color=COLORS['gold'])

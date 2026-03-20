@@ -2,3 +2,7 @@
 __pycache__/
 build/
 *.apk
+venv/
+*.log
+*.out
+*.txt

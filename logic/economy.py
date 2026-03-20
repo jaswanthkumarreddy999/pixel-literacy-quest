@@ -50,3 +50,33 @@ class BankSystem:
             player.fd_rate = 0.0
             return True, msg
         return False, "No active FD to redeem."
+
+    @staticmethod
+    def repay_loan(player, amount):
+        if amount <= 0: return False, "Invalid amount."
+        if player.loan <= 0: return False, "You don't have any active loans."
+        
+        # Don't overpay
+        actual_payment = min(amount, player.loan)
+        
+        if player.bank_balance >= actual_payment:
+            player.bank_balance -= actual_payment
+            player.loan -= actual_payment
+            
+            msg = f"Repaid Rs. {actual_payment} of loan from Bank."
+            if player.loan == 0:
+                player.loan_timer = 0
+                msg += " LOAN FULLY PAID OFF!"
+            return True, msg
+            
+        elif player.wallet >= actual_payment:
+            player.wallet -= actual_payment
+            player.loan -= actual_payment
+            
+            msg = f"Repaid Rs. {actual_payment} of loan from Wallet."
+            if player.loan == 0:
+                player.loan_timer = 0
+                msg += " LOAN FULLY PAID OFF!"
+            return True, msg
+            
+        return False, "Not enough funds in Wallet or Bank to repay this amount."

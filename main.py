@@ -2,13 +2,19 @@ import pygame
 import sys
 import asyncio
 import platform
-from config.settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, COLORS
+from config.settings import (
+    SCREEN_WIDTH, SCREEN_HEIGHT, FPS, COLORS, 
+    AVATAR_COLORS, AVATAR_NAMES
+)
 from core.game_manager import GameManager
+import config.audio as audio
 
 # --- STATES ---
 MENU = "menu"
 INPUT_P1 = "input_p1"
+AVATAR_P1 = "avatar_p1"
 INPUT_P2 = "input_p2"
+AVATAR_P2 = "avatar_p2"
 GAMEPLAY = "gameplay"
 
 async def main():
@@ -42,13 +48,18 @@ async def main():
     game_state = MENU
     p1_name_input = ""
     p2_name_input = ""
+    p1_avatar = COLORS['p1_bg']
+    p2_avatar = COLORS['p2_bg']
+    avatar_idx = 0
+    play_vs_ai = False
     game_manager = None 
 
     # UI Rects
     close_rect = pygame.Rect(SCREEN_WIDTH - 45, 10, 30, 30)
     toggle_rect = pygame.Rect(SCREEN_WIDTH - 85, 10, 30, 30)
     min_rect = pygame.Rect(SCREEN_WIDTH - 125, 10, 30, 30)
-    btn_play_rect = pygame.Rect(SCREEN_WIDTH//2 - 100, 300, 200, 50)
+    btn_play_rect = pygame.Rect(SCREEN_WIDTH//2 - 220, 300, 200, 50)
+    btn_ai_rect = pygame.Rect(SCREEN_WIDTH//2 + 20, 300, 200, 50)
     btn_exit_rect = pygame.Rect(SCREEN_WIDTH//2 - 100, 380, 200, 50)
 
     running = True
@@ -77,30 +88,23 @@ async def main():
                 elif min_rect.collidepoint(event.pos) and not IS_WEB:
                     pygame.display.iconify()
                 elif toggle_rect.collidepoint(event.pos):
-                    if IS_WEB:
-                        platform.window.eval("""
-                            if (!document.fullscreenElement) {
-                                document.documentElement.requestFullscreen();
-                            } else if (document.exitFullscreen) {
-                                document.exitFullscreen();
-                            }
-                        """)
+                    # Standard Pygame fullscreen toggle
+                    is_fullscreen = not is_fullscreen
+                    if is_fullscreen:
+                        screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
                     else:
-                        is_fullscreen = not is_fullscreen
-                        if is_fullscreen:
-                            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
-                        else:
-                            screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
+                        screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.NOFRAME)
 
             # --- INPUT HANDLING ---
             if game_state in [INPUT_P1, INPUT_P2]:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
                         if game_state == INPUT_P1 and p1_name_input.strip():
-                            game_state = INPUT_P2
+                            game_state = AVATAR_P1
+                            avatar_idx = 0
                         elif game_state == INPUT_P2 and p2_name_input.strip():
-                            game_manager = GameManager(screen, p1_name_input.strip(), p2_name_input.strip())
-                            game_state = GAMEPLAY
+                            game_state = AVATAR_P2
+                            avatar_idx = 0
                     elif event.key == pygame.K_BACKSPACE:
                         if game_state == INPUT_P1: p1_name_input = p1_name_input[:-1]
                         else: p2_name_input = p2_name_input[:-1]
@@ -111,6 +115,33 @@ async def main():
                                 p1_name_input += event.unicode
                             elif game_state == INPUT_P2 and len(p2_name_input) < 12:
                                 p2_name_input += event.unicode
+                                
+            # --- AVATAR SELECTION LOGIC ---
+            elif game_state in [AVATAR_P1, AVATAR_P2]:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT:
+                        avatar_idx = (avatar_idx - 1) % len(AVATAR_COLORS)
+                        audio.play('click')
+                    elif event.key == pygame.K_RIGHT:
+                        avatar_idx = (avatar_idx + 1) % len(AVATAR_COLORS)
+                        audio.play('click')
+                    elif event.key == pygame.K_RETURN:
+                        audio.play('click')
+                        if game_state == AVATAR_P1:
+                            p1_avatar = AVATAR_COLORS[avatar_idx]
+                            if play_vs_ai:
+                                p2_name_input = "AI Bot"
+                                p2_avatar = AVATAR_COLORS[(avatar_idx + 1) % len(AVATAR_COLORS)]
+                                game_manager = GameManager(screen, p1_name_input.strip(), p2_name_input, 
+                                                           p1_avatar, p2_avatar, True)
+                                game_state = GAMEPLAY
+                            else:
+                                game_state = INPUT_P2
+                        else:
+                            p2_avatar = AVATAR_COLORS[avatar_idx]
+                            game_manager = GameManager(screen, p1_name_input.strip(), p2_name_input.strip(),
+                                                       p1_avatar, p2_avatar, False)
+                            game_state = GAMEPLAY
 
             # --- GAMEPLAY RESTART LOGIC ---
             elif game_state == GAMEPLAY and game_manager and game_manager.winner:
@@ -122,9 +153,16 @@ async def main():
             elif game_state == MENU:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if btn_play_rect.collidepoint(event.pos):
+                        play_vs_ai = False
                         game_state = INPUT_P1
                         p1_name_input = ""
                         p2_name_input = ""
+                        audio.play('click')
+                    elif btn_ai_rect.collidepoint(event.pos):
+                        play_vs_ai = True
+                        game_state = INPUT_P1
+                        p1_name_input = ""
+                        audio.play('click')
                     elif btn_exit_rect.collidepoint(event.pos):
                         running = False
 
@@ -151,9 +189,10 @@ async def main():
             title_surf = font_title.render("PIXEL LITERACY QUEST", True, (255, 255, 255))
             screen.blit(title_surf, (SCREEN_WIDTH//2 - title_surf.get_width()//2, 150))
             
-            for btn, txt in [(btn_play_rect, "PLAY GAME"), (btn_exit_rect, "EXIT")]:
+            for btn, txt in [(btn_play_rect, "1P vs 2P"), (btn_ai_rect, "1P vs AI"), (btn_exit_rect, "EXIT")]:
                 c = COLORS['btn_hover'] if btn.collidepoint(mouse_pos) else COLORS['btn_normal']
                 pygame.draw.rect(screen, c, btn, border_radius=10)
+                pygame.draw.rect(screen, COLORS['ui_border'], btn, 2, border_radius=10)
                 lbl = font_btn.render(txt, True, (255, 255, 255))
                 screen.blit(lbl, (btn.centerx - lbl.get_width()//2, btn.centery - lbl.get_height()//2))
         
@@ -161,6 +200,10 @@ async def main():
             prompt = "ENTER PLAYER 1 NAME:" if game_state == INPUT_P1 else "ENTER PLAYER 2 NAME:"
             text = p1_name_input if game_state == INPUT_P1 else p2_name_input
             draw_input_screen(screen, font_title, font_input, prompt, text, COLORS['p1_bg' if game_state == INPUT_P1 else 'p2_bg'])
+
+        elif game_state in [AVATAR_P1, AVATAR_P2]:
+            prompt = f"{p1_name_input}, CHOOSE AVATAR:" if game_state == AVATAR_P1 else f"{p2_name_input}, CHOOSE AVATAR:"
+            draw_avatar_screen(screen, font_title, font_input, prompt, avatar_idx)
         
         elif game_state == GAMEPLAY and game_manager:
             if not game_manager.winner:
@@ -169,19 +212,7 @@ async def main():
             game_manager.update()
             game_manager.draw()
 
-            if game_manager.winner:
-                overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-                overlay.fill((0, 0, 0, 200))
-                screen.blit(overlay, (0, 0))
-
-                winner_obj = game_manager.winner
-                winner_name = winner_obj.name if hasattr(winner_obj, 'name') else str(winner_obj)
-                
-                win_txt = font_title.render(f"{winner_name.upper()} WINS!", True, (255, 215, 0))
-                hint_txt = font_btn.render("Press ENTER to Return to Menu", True, (255, 255, 255))
-                
-                screen.blit(win_txt, (SCREEN_WIDTH//2 - win_txt.get_width()//2, SCREEN_HEIGHT//2 - 50))
-                screen.blit(hint_txt, (SCREEN_WIDTH//2 - hint_txt.get_width()//2, SCREEN_HEIGHT//2 + 30))
+            # Winner screen is fully rendered by HUD's draw_scorecard
 
         pygame.display.flip()
         clock.tick(FPS)
@@ -202,6 +233,36 @@ def draw_input_screen(screen, title_font, input_font, prompt, current_text, acce
     cursor = "|" if (pygame.time.get_ticks() // 500) % 2 == 0 else ""
     txt_surf = input_font.render(current_text + cursor, True, (255, 255, 255))
     screen.blit(txt_surf, (input_rect.centerx - txt_surf.get_width()//2, input_rect.centery - txt_surf.get_height()//2))
+
+def draw_avatar_screen(screen, title_font, input_font, prompt, current_idx):
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 200))
+    screen.blit(overlay, (0,0))
+    
+    prompt_surf = title_font.render(prompt, True, (255, 255, 255))
+    screen.blit(prompt_surf, (SCREEN_WIDTH//2 - prompt_surf.get_width()//2, 150))
+    
+    # Draw avatar choices
+    num_avatars = len(AVATAR_COLORS)
+    spacing = 150
+    start_x = SCREEN_WIDTH//2 - (spacing * (num_avatars-1))//2
+    cy = 350
+    
+    for i, color in enumerate(AVATAR_COLORS):
+        name = AVATAR_NAMES[i]
+        cx = start_x + i * spacing
+        is_sel = (i == current_idx)
+        
+        radius = 50 if is_sel else 40
+        pygame.draw.circle(screen, color, (cx, cy), radius)
+        pygame.draw.circle(screen, COLORS['white'] if is_sel else (80,80,80), (cx, cy), radius, 4 if is_sel else 2)
+        
+        if is_sel:
+            name_surf = input_font.render(name, True, color)
+            screen.blit(name_surf, (cx - name_surf.get_width()//2, cy + 70))
+            
+    help_surf = pygame.font.Font(None, 30).render("Use LEFT/RIGHT arrows, press ENTER to confirm", True, (150, 150, 150))
+    screen.blit(help_surf, (SCREEN_WIDTH//2 - help_surf.get_width()//2, 500))
 
 if __name__ == "__main__":
     asyncio.run(main())
